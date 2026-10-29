@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ISO 工段標準化建置後台 - 覺觀射藝</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col justify-center items-center p-4">
+
+  <!-- ==================== 1. 登入視窗 ==================== -->
+  <div id="loginView" class="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 p-8">
+    <div class="text-center mb-6">
+      <div class="inline-flex items-center justify-center w-14 h-14 bg-slate-900 text-white rounded-full mb-3 shadow">
+        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+        </svg>
+      </div>
+      <h1 class="text-2xl font-bold text-slate-900 tracking-wide">覺觀射藝</h1>
+      <p class="text-xs text-slate-500 mt-1">ISO 標準工段管理系統・權限登入</p>
+    </div>
+
+    <form onsubmit="handleLogin(event)" class="space-y-4">
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 mb-1">員工帳號 (Username)</label>
+        <input type="text" id="loginUser" required placeholder="例如: wolf / dan / lin"
+               class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm">
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 mb-1">登入密碼 (Password)</label>
+        <input type="password" id="loginPass" required placeholder="預設密碼 123"
+               class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm">
+      </div>
+
+      <div id="loginError" class="hidden text-xs text-red-600 bg-red-50 p-2.5 rounded border border-red-200"></div>
+
+      <button type="submit" id="loginBtn"
+              class="w-full bg-slate-900 hover:bg-slate-800 text-white font-medium py-2.5 rounded-lg shadow transition text-sm">
+        驗證登入
+      </button>
+
+      <p class="text-[11px] text-center text-slate-400 mt-3">
+        僅限 wolf、dan、lin 具備管理員權限進入建置
+      </p>
+    </form>
+  </div>
+
+  <!-- ==================== 2. 工段建置主系統 ==================== -->
+  <div id="mainDashboard" class="hidden w-full max-w-4xl bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden my-6">
+    
+    <!-- 頂部資訊列與登出/改密碼按鈕 -->
+    <div class="bg-slate-900 text-white px-8 py-5 flex justify-between items-center">
+      <div>
+        <h1 class="text-xl font-bold tracking-wide">覺觀射藝 - ISO 標準工段建置後台</h1>
+        <p class="text-xs text-slate-400 mt-1">權限隔離・規格防呆・共用資料庫</p>
+      </div>
+      <div class="flex items-center space-x-3">
+        <div class="text-right">
+          <div class="text-xs text-slate-400">目前登入管理者</div>
+          <div id="currentUserBadge" class="text-sm font-semibold text-emerald-400">wolf</div>
+        </div>
+        
+        <!-- 修改密碼按鈕 -->
+        <button onclick="openPasswordModal()" class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-600 px-3 py-1.5 rounded transition">
+          🔒 修改密碼
+        </button>
+
+        <!-- 登出按鈕 -->
+        <button onclick="handleLogout()" class="text-xs bg-slate-800 hover:bg-rose-900 border border-slate-700 px-3 py-1.5 rounded transition">
+          登出
+        </button>
+      </div>
+    </div>
+
+    <!-- 表單內容 -->
+    <form id="isoForm" class="p-8 space-y-6" onsubmit="handleSubmit(event)">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <label class="block text-sm font-semibold mb-1 text-slate-700">工段代碼 (MID) <span class="text-red-500">*</span></label>
+          <input type="text" id="mid" required placeholder="例: T-01 或 EQ-AR-01" class="w-full uppercase px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+          <p class="text-xs text-slate-400 mt-1">防呆：系統將自動轉換為標準大寫英文與數字</p>
+        </div>
+        <div>
+          <label class="block text-sm font-semibold mb-1 text-slate-700">工段名稱 (動詞+名詞) <span class="text-red-500">*</span></label>
+          <input type="text" id="title" required placeholder="例: 開啟配電箱總電源" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+          <p class="text-xs text-slate-400 mt-1">規範：嚴禁模糊詞彙，需具備明確動作受詞</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+        <div>
+          <label class="block text-xs font-semibold mb-1 text-slate-600">作業屬性</label>
+          <select id="attribute" class="w-full px-2 py-1.5 bg-white border rounded text-sm">
+            <option value="剛性">剛性串聯 (不可跳過)</option>
+            <option value="彈性">彈性並聯 (自由平行)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold mb-1 text-slate-600">資格門檻</label>
+          <select id="minLevel" class="w-full px-2 py-1.5 bg-white border rounded text-sm">
+            <option value="L1">L1 通用人員</option>
+            <option value="L2">L2 常規授權</option>
+            <option value="L3">L3 專業管理</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold mb-1 text-slate-600">標準點數 (Pt)</label>
+          <input type="number" id="points" required min="5" max="100" step="5" value="15" class="w-full px-2 py-1.5 bg-white border rounded text-sm">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold mb-1 text-slate-600">標準耗時 (T, 分鐘)</label>
+          <input type="number" id="duration" required min="1" max="180" value="15" class="w-full px-2 py-1.5 bg-white border rounded text-sm">
+        </div>
+      </div>
+
+      <!-- 前置依賴下拉防呆勾選 -->
+      <div>
+        <label class="block text-sm font-semibold mb-1 text-slate-700">前置工段依賴 (是否有前置？若有請勾選，杜絕手寫錯字)</label>
+        <div id="prereqContainer" class="max-h-36 overflow-y-auto border rounded-lg p-3 bg-white grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-slate-600">
+          <span class="text-xs text-slate-400">正在自資料庫載入既有 MID 清單...</span>
+        </div>
+      </div>
+
+      <!-- SOP 說明 -->
+      <div>
+        <label class="block text-sm font-semibold mb-1 text-slate-700">SOP 作業指引與安全規範 <span class="text-red-500">*</span></label>
+        <textarea id="sopDesc" required rows="3" placeholder="請詳細條列具體操作步驟、使用工具與安全極限..." class="w-full px-3 py-2 border rounded-lg text-sm"></textarea>
+      </div>
+
+      <!-- 自檢項目 -->
+      <div>
+        <label class="block text-sm font-semibold mb-1 text-slate-700">自檢與 Gate 交付指標 (每行一項，系統自動拆成核對清單) <span class="text-red-500">*</span></label>
+        <textarea id="checklist" required rows="3" placeholder="例：&#10;主面板指示燈全綠&#10;全場照明開啟通電正常" class="w-full px-3 py-2 border rounded-lg text-sm"></textarea>
+      </div>
+
+      <div class="flex justify-end pt-4 border-t border-slate-200">
+        <button type="submit" id="submitBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-2.5 rounded-lg shadow transition">
+          儲存並存入資料庫
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- ==================== 3. 修改密碼彈窗 (Modal) ==================== -->
+  <div id="pwdModal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-sm w-full p-6">
+      <h3 class="text-lg font-bold text-slate-900 mb-2">修改個人密碼</h3>
+      <p class="text-xs text-slate-500 mb-4">修改後將直接存入雲端資料庫，下次請用新密碼登入。</p>
+      
+      <form onsubmit="handleUpdatePassword(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">目前舊密碼</label>
+          <input type="password" id="oldPwd" required class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">設定新密碼</label>
+          <input type="password" id="newPwd" required minlength="3" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+        </div>
+        
+        <div id="pwdError" class="hidden text-xs text-red-600 bg-red-50 p-2 rounded border border-red-200"></div>
+
+        <div class="flex justify-end space-x-2 pt-2">
+          <button type="button" onclick="closePasswordModal()" class="px-4 py-2 border rounded-lg text-xs text-slate-600 hover:bg-slate-50">
+            取消
+          </button>
+          <button type="submit" id="savePwdBtn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium shadow">
+            確認儲存
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://wlvkdzkiepomdkzijxfr.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndsdmtkemtpZXBvbWRremlqeGZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyMzMyNjIsImV4cCI6MjEwODgwOTI2Mn0.UnEC8mibX_x0txwuKj7ygBxOvOx62FLzIgenV0LzxII"; 
+    const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let loggedInUser = null;
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const savedUser = sessionStorage.getItem('iso_user');
+      if (savedUser) {
+        setupDashboard(JSON.parse(savedUser));
+      }
+    });
+
+    async function handleLogin(e) {
+      e.preventDefault();
+      const userField = document.getElementById('loginUser').value.trim().toLowerCase();
+      const passField = document.getElementById('loginPass').value.trim();
+      const errBox = document.getElementById('loginError');
+      const loginBtn = document.getElementById('loginBtn');
+
+      errBox.classList.add('hidden');
+      loginBtn.disabled = true;
+      loginBtn.innerText = "連線驗證中...";
+
+      const { data, error } = await client
+        .from('users')
+        .select('*')
+        .eq('username', userField)
+        .eq('password', passField)
+        .maybeSingle();
+
+      loginBtn.disabled = false;
+      loginBtn.innerText = "驗證登入";
+
+      if (error) {
+        showError("連線資料庫異常：" + error.message);
+        return;
+      }
+
+      if (!data) {
+        showError("❌ 帳號或密碼錯誤，請重新確認！");
+        return;
+      }
+
+      const allowedAdmins = ['wolf', 'dan', 'lin'];
+      if (!allowedAdmins.includes(data.username)) {
+        showError(`⚠️ 您好 ${data.name}，您目前身分為一般同仁，僅具備任務認領權限，無權進入 ISO 工段建置庫！`);
+        return;
+      }
+
+      sessionStorage.setItem('iso_user', JSON.stringify(data));
+      setupDashboard(data);
+    }
+
+    function setupDashboard(user) {
+      loggedInUser = user;
+      document.getElementById('loginView').classList.add('hidden');
+      document.getElementById('mainDashboard').classList.remove('hidden');
+      document.getElementById('currentUserBadge').innerText = user.username;
+      loadExistingMids();
+    }
+
+    function handleLogout() {
+      sessionStorage.removeItem('iso_user');
+      loggedInUser = null;
+      document.getElementById('mainDashboard').classList.add('hidden');
+      document.getElementById('loginView').classList.remove('hidden');
+      document.getElementById('loginPass').value = '';
+    }
+
+    function showError(msg) {
+      const errBox = document.getElementById('loginError');
+      errBox.innerText = msg;
+      errBox.classList.remove('hidden');
+    }
+
+    // ====== 修改密碼邏輯 ======
+    function openPasswordModal() {
+      document.getElementById('oldPwd').value = '';
+      document.getElementById('newPwd').value = '';
+      document.getElementById('pwdError').classList.add('hidden');
+      document.getElementById('pwdModal').classList.remove('hidden');
+    }
+
+    function closePasswordModal() {
+      document.getElementById('pwdModal').classList.add('hidden');
+    }
+
+    async function handleUpdatePassword(e) {
+      e.preventDefault();
+      if (!loggedInUser) return;
+
+      const oldPwd = document.getElementById('oldPwd').value.trim();
+      const newPwd = document.getElementById('newPwd').value.trim();
+      const pwdError = document.getElementById('pwdError');
+      const saveBtn = document.getElementById('savePwdBtn');
+
+      pwdError.classList.add('hidden');
+
+      // 檢查舊密碼是否吻合
+      if (oldPwd !== loggedInUser.password) {
+        pwdError.innerText = "❌ 原舊密碼輸入不正確！";
+        pwdError.classList.remove('hidden');
+        return;
+      }
+
+      saveBtn.disabled = true;
+      saveBtn.innerText = "更新中...";
+
+      // 直接改寫 Supabase 資料庫中的 users 表
+      const { error } = await client
+        .from('users')
+        .update({ password: newPwd })
+        .eq('id', loggedInUser.id);
+
+      saveBtn.disabled = false;
+      saveBtn.innerText = "確認儲存";
+
+      if (error) {
+        pwdError.innerText = "修改失敗：" + error.message;
+        pwdError.classList.remove('hidden');
+      } else {
+        alert("🎉 密碼修改成功！下次登入請使用新密碼。");
+        loggedInUser.password = newPwd;
+        sessionStorage.setItem('iso_user', JSON.stringify(loggedInUser));
+        closePasswordModal();
+      }
+    }
+
+    // ====== 工段建置邏輯 ======
+    async function loadExistingMids() {
+      const container = document.getElementById('prereqContainer');
+      const { data, error } = await client.from('task_templates').select('id, title, attribute').order('id');
+      if (error || !data || data.length === 0) {
+        container.innerHTML = '<span class="text-xs text-slate-400">目前資料庫尚無其他工段可作為前置。</span>';
+        return;
+      }
+      container.innerHTML = data.map(t => `
+        <label class="flex items-center space-x-2 p-1.5 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-200">
+          <input type="checkbox" name="prereq" value="${t.id}" class="rounded text-blue-600 focus:ring-0">
+          <span class="font-mono font-medium text-xs text-blue-700">[${t.id}]</span>
+          <span class="truncate text-xs">${t.title}</span>
+          <span class="text-[10px] text-slate-400">(${t.attribute})</span>
+        </label>
+      `).join('');
+    }
+
+    async function handleSubmit(e) {
+      e.preventDefault();
+      if (!loggedInUser) return;
+
+      const submitBtn = document.getElementById('submitBtn');
+      const mid = document.getElementById('mid').value.trim().toUpperCase();
+      const title = document.getElementById('title').value.trim();
+      const attribute = document.getElementById('attribute').value;
+      const minLevel = document.getElementById('minLevel').value;
+      const points = parseInt(document.getElementById('points').value, 10);
+      const duration = parseInt(document.getElementById('duration').value, 10);
+      const sopDesc = document.getElementById('sopDesc').value.trim();
+
+      const rawChecklist = document.getElementById('checklist').value.split('\n');
+      const checklist = rawChecklist.map(s => s.trim()).filter(s => s.length > 0);
+
+      if (checklist.length === 0) {
+        alert("【防呆攔截】自檢項目不得為空！");
+        return;
+      }
+
+      const checkedBoxes = document.querySelectorAll('input[name="prereq"]:checked');
+      const prerequisites = Array.from(checkedBoxes).map(cb => cb.value);
+
+      if (prerequisites.includes(mid)) {
+        alert("【防呆攔截】前置相依不能包含自己！");
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.innerText = "寫入資料庫中...";
+
+      const { error } = await client.from('task_templates').upsert([{
+        id: mid,
+        title: title,
+        sop_desc: sopDesc,
+        attribute: attribute,
+        default_points: points,
+        estimated_minutes: duration,
+        min_level: minLevel,
+        prerequisites: prerequisites,
+        checklist: checklist,
+        creator: loggedInUser.username
+      }]);
+
+      if (error) {
+        alert("寫入失敗：" + error.message);
+      } else {
+        alert(`✅ 工段 [${mid}] 成功存入標準資料庫！`);
+        document.getElementById('isoForm').reset();
+        loadExistingMids();
+      }
+      submitBtn.disabled = false;
+      submitBtn.innerText = "儲存並存入資料庫";
+    }
+  </script>
+</body>
+</html>
